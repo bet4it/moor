@@ -34,13 +34,12 @@ func (p *Pager) redraw(spinner string) {
 	p.longestLineLength = 0
 
 	lastUpdatedScreenLineNumber := -1
-	var renderedScreenLines [][]twin.StyledRune
 	renderedScreenLines, statusText := p.renderScreenLines()
 	for screenLineNumber, row := range renderedScreenLines {
 		lastUpdatedScreenLineNumber = screenLineNumber
 		column := 0
 		for _, cell := range row {
-			column += p.screen.SetCell(column, lastUpdatedScreenLineNumber, cell)
+			column += p.screen.SetCell(column, lastUpdatedScreenLineNumber, cell.ToStyledRune())
 		}
 	}
 
@@ -54,7 +53,7 @@ func (p *Pager) redraw(spinner string) {
 	spinnerLine := textstyles.StyledRunesFromString(statusbarStyle, eofSpinner, nil).StyledRunes
 	column := 0
 	for _, cell := range spinnerLine {
-		column += p.screen.SetCell(column, lastUpdatedScreenLineNumber+1, cell)
+		column += p.screen.SetCell(column, lastUpdatedScreenLineNumber+1, cell.ToStyledRune())
 	}
 
 	p.mode.drawFooter(statusText, spinner)
@@ -68,14 +67,14 @@ func (p *Pager) redraw(spinner string) {
 //
 // The lines returned by this method are decorated with horizontal scroll
 // markers and line numbers and are ready to be output to the screen.
-func (p *Pager) renderScreenLines() (lines [][]RuneWithMetadata, statusText string) {
+func (p *Pager) renderScreenLines() (lines [][]textstyles.RuneWithMetadata, statusText string) {
 	renderedLines, statusText := p.renderLines()
 	if len(renderedLines) == 0 {
 		return
 	}
 
 	// Construct the screen lines to return
-	screenLines := make([][]twin.StyledRune, 0, len(renderedLines))
+	screenLines := make([][]textstyles.RuneWithMetadata, 0, len(renderedLines))
 	for _, renderedLine := range renderedLines {
 		screenLines = append(screenLines, renderedLine.cells)
 
@@ -87,7 +86,7 @@ func (p *Pager) renderScreenLines() (lines [][]RuneWithMetadata, statusText stri
 		screenWidth, _ := p.screen.Size()
 		for len(screenLines[len(screenLines)-1]) < screenWidth {
 			screenLines[len(screenLines)-1] =
-				append(screenLines[len(screenLines)-1], twin.NewStyledRune(' ', renderedLine.trailer))
+				append(screenLines[len(screenLines)-1], textstyles.RuneWithMetadata{Rune: ' ', Style: renderedLine.trailer})
 		}
 	}
 
@@ -184,13 +183,13 @@ func (p *Pager) renderLines() ([]renderedLine, string) {
 // indent, and to (optionally) render the line number.
 func (p *Pager) renderLine(line *reader.NumberedLine, numberPrefixLength int) []renderedLine {
 	highlighted := line.HighlightedTokens(plainTextStyle, searchHitStyle, searchHitLineBackground, p.searchPattern)
-	var wrapped [][]twin.StyledRune
+	var wrapped [][]textstyles.RuneWithMetadata
 	if p.WrapLongLines {
 		width, _ := p.screen.Size()
 		wrapped = wrapLine(width-numberPrefixLength, highlighted.StyledRunes)
 	} else {
 		// All on one line
-		wrapped = [][]twin.StyledRune{highlighted.StyledRunes}
+		wrapped = [][]textstyles.RuneWithMetadata{highlighted.StyledRunes}
 	}
 
 	rendered := make([]renderedLine, 0)
