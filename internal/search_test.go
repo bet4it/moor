@@ -3,6 +3,7 @@ package internal
 import (
 	"testing"
 
+	"github.com/walles/moor/v2/internal/linemetadata"
 	"github.com/walles/moor/v2/internal/reader"
 	"github.com/walles/moor/v2/twin"
 	"gotest.tools/v3/assert"
@@ -172,10 +173,8 @@ func TestScrollToNextSearchHit_SubLineHits1(t *testing.T) {
 	// Scroll to the next search hit
 	searchMode.updateSearchPattern()
 
-	// Update the screen
-	pager.redraw("")
-
 	// The first hit should be visible
+	pager.redraw("")
 	assertScreenHasRow(t, screen, "5träff")
 }
 
@@ -203,14 +202,47 @@ func TestScrollToNextSearchHit_SubLineHits2(t *testing.T) {
 	pager.mode = PagerModeViewing{pager: pager}
 	pager.scrollToNextSearchHit()
 
-	// Update the screen
-	pager.redraw("")
-
 	// The second hit should be visible
+	pager.redraw("")
 	assertScreenHasRow(t, screen, "5träff")
 
 	// Go for the last hit as well
 	pager.scrollToNextSearchHit()
 	pager.redraw("")
 	assertScreenHasRow(t, screen, "8träff")
+}
+
+// Start at the bottom and type a backwards search for a word that is above us
+// in the wrapped line. That word should become visible.
+func TestScrollToNextSearchHit_SubLineHits3(t *testing.T) {
+	reader := reader.NewFromTextForTesting("", "1miss 2träff 3miss 4miss 5träff 6miss 7miss 8miss 9miss")
+	bottom := NewScrollPositionFromIndex(linemetadata.IndexFromZeroBased(99), "end")
+
+	screen := twin.NewFakeScreen(10, 3)
+	pager := NewPager(reader)
+	pager.WrapLongLines = true
+	pager.ShowStatusBar = false
+	pager.ShowLineNumbers = false
+	pager.screen = screen
+
+	// Precondition: Check that our bottom position actually is
+	pager.scrollPosition = bottom
+	pager.redraw("")
+	assertScreenHasRow(t, screen, "9miss")
+
+	// Start typing a backwards search
+	pager.searchString = "träff"
+	searchMode := PagerModeSearch{
+		pager:                 pager,
+		direction:             SearchDirectionBackward,
+		initialScrollPosition: bottom,
+	}
+	pager.mode = searchMode
+
+	// Scroll to the previous search hit
+	searchMode.updateSearchPattern()
+
+	// The first hit should be visible
+	pager.redraw("")
+	assertScreenHasRow(t, screen, "5träff")
 }
