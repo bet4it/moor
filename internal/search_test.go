@@ -151,7 +151,7 @@ func assertScreenHasRow(t *testing.T, screen *twin.FakeScreen, expected string) 
 		screenshot += rowString
 	}
 
-	t.Fatalf("Expected to find row '%s' in screen, screenshot:\n%s", expected, screenshot)
+	t.Fatalf("Expected screen to contain row '%s', screenshot:\n%s", expected, screenshot)
 }
 
 // Start at the top and type a word that has been wrapped off screen. That word
@@ -245,4 +245,50 @@ func TestScrollToNextSearchHit_SubLineHits3(t *testing.T) {
 	// The first hit should be visible
 	pager.redraw("")
 	assertScreenHasRow(t, screen, "5träff")
+}
+
+// Start at the bottom and search for a word that is above us in the wrapped
+// line. The search hit currently visible should be ignored, and the next one
+// should become visible.
+func TestScrollToNextSearchHit_SubLineHits4(t *testing.T) {
+	reader := reader.NewFromTextForTesting("", "1miss 2träff 3miss 4miss 5träff 6miss 7miss 8träff 9miss")
+	bottom := NewScrollPositionFromIndex(linemetadata.IndexFromZeroBased(99), "end")
+
+	screen := twin.NewFakeScreen(10, 3)
+	pager := NewPager(reader)
+	pager.WrapLongLines = true
+	pager.ShowStatusBar = false
+	pager.ShowLineNumbers = false
+	pager.screen = screen
+
+	// Precondition: Check that our bottom position actually is
+	pager.scrollPosition = bottom
+	pager.redraw("")
+	assertScreenHasRow(t, screen, "9miss")
+
+	// Start typing a backwards search
+	pager.searchString = "träff"
+	searchMode := PagerModeSearch{
+		pager:                 pager,
+		direction:             SearchDirectionBackward,
+		initialScrollPosition: bottom,
+	}
+	pager.mode = searchMode
+
+	// This will highlight the currently visible hit
+	searchMode.updateSearchPattern()
+	assertScreenHasRow(t, screen, "8träff")
+
+	// This should take us to the previous hit
+	pager.mode = PagerModeViewing{pager: pager}
+	pager.scrollToPreviousSearchHit()
+
+	// The second (backwards) hit should be visible
+	pager.redraw("")
+	assertScreenHasRow(t, screen, "5träff")
+
+	// Go for the last (backwards) hit as well
+	pager.scrollToPreviousSearchHit()
+	pager.redraw("")
+	assertScreenHasRow(t, screen, "2träff")
 }
