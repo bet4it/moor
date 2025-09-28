@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"slices"
 	"testing"
 
 	"github.com/walles/moor/v2/internal/reader"
@@ -134,8 +133,30 @@ func Test152(t *testing.T) {
 	assert.Equal(t, 2, pager.lineIndex().Index())
 }
 
+func assertScreenHasRow(t *testing.T, screen *twin.FakeScreen, expected string) {
+	screenshot := ""
+
+	_, screenHeight := screen.Size()
+	for rowIndex := 0; rowIndex < screenHeight; rowIndex++ {
+		row := screen.GetRow(rowIndex)
+		rowString := rowToString(row)
+		if rowString == expected {
+			return
+		}
+
+		if rowIndex > 0 {
+			screenshot += "\n"
+		}
+		screenshot += rowString
+	}
+
+	t.Fatalf("Expected to find row '%s' in screen, screenshot:\n%s", expected, screenshot)
+}
+
+// Start at the top and type a word that has been wrapped off screen. That word
+// should become visible.
 func TestScrollToNextSearchHit_SubLineHits1(t *testing.T) {
-	reader := reader.NewFromTextForTesting("", "1miss 2träff 3miss 4miss 5träff 6miss 7miss 8träff 9miss")
+	reader := reader.NewFromTextForTesting("", "1miss 2miss 3miss 4miss 5träff 6miss 7miss 8träff 9miss")
 
 	screen := twin.NewFakeScreen(10, 3)
 	pager := NewPager(reader)
@@ -154,12 +175,42 @@ func TestScrollToNextSearchHit_SubLineHits1(t *testing.T) {
 	// Update the screen
 	pager.redraw("")
 
-	screenRows := []string{
-		rowToString(screen.GetRow(0)),
-		rowToString(screen.GetRow(1)),
-		rowToString(screen.GetRow(2)),
-	}
-
 	// The first hit should be visible
-	assert.Equal(t, true, slices.Contains(screenRows, "2träff"))
+	assertScreenHasRow(t, screen, "5träff")
+}
+
+// Start at the top and go to the next search hit, which has been wrapped off
+// screen. The search hit currently visible should be ignored, and the next one
+// should become visible.
+func TestScrollToNextSearchHit_SubLineHits2(t *testing.T) {
+	reader := reader.NewFromTextForTesting("", "1miss 2träff 3miss 4miss 5träff 6miss 7miss 8träff 9miss")
+
+	screen := twin.NewFakeScreen(10, 3)
+	pager := NewPager(reader)
+	pager.WrapLongLines = true
+	pager.ShowStatusBar = false
+	pager.ShowLineNumbers = false
+	pager.screen = screen
+
+	pager.searchString = "träff"
+	searchMode := PagerModeSearch{pager: pager}
+	pager.mode = searchMode
+
+	// This will highlight the currently visible hit
+	searchMode.updateSearchPattern()
+
+	// This should take us to the next hit
+	pager.mode = PagerModeViewing{pager: pager}
+	pager.scrollToNextSearchHit()
+
+	// Update the screen
+	pager.redraw("")
+
+	// The second hit should be visible
+	assertScreenHasRow(t, screen, "5träff")
+
+	// Go for the last hit as well
+	pager.scrollToNextSearchHit()
+	pager.redraw("")
+	assertScreenHasRow(t, screen, "8träff")
 }
