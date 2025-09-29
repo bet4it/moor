@@ -154,9 +154,33 @@ func assertScreenHasRow(t *testing.T, screen *twin.FakeScreen, expected string) 
 	t.Fatalf("Expected screen to contain row '%s', screenshot:\n%s", expected, screenshot)
 }
 
+// Start at the top and type a word that is on a not-visible input line, which
+// is also long enough that we'll need to scroll to one of its sublines.
+func TestScrollToNextSearchHit_SubLineHits1(t *testing.T) {
+	reader := reader.NewFromTextForTesting("", "1miss\n2miss\n3miss\n4miss 5miss 6miss 7träff 8miss 9miss")
+
+	screen := twin.NewFakeScreen(10, 3)
+	pager := NewPager(reader)
+	pager.WrapLongLines = true
+	pager.ShowStatusBar = false
+	pager.ShowLineNumbers = false
+	pager.screen = screen
+
+	pager.searchString = "träff"
+	searchMode := PagerModeSearch{pager: pager}
+	pager.mode = searchMode
+
+	// Scroll to the next search hit
+	searchMode.updateSearchPattern()
+
+	// The first hit should be visible
+	pager.redraw("")
+	assertScreenHasRow(t, screen, "7träff")
+}
+
 // Start at the top and type a word that has been wrapped off screen. That word
 // should become visible.
-func TestScrollToNextSearchHit_SubLineHits1(t *testing.T) {
+func TestScrollToNextSearchHit_SubLineHits2(t *testing.T) {
 	reader := reader.NewFromTextForTesting("", "1miss 2miss 3miss 4miss 5träff 6miss 7miss 8träff 9miss")
 
 	screen := twin.NewFakeScreen(10, 3)
@@ -181,7 +205,7 @@ func TestScrollToNextSearchHit_SubLineHits1(t *testing.T) {
 // Start at the top and go to the next search hit, which has been wrapped off
 // screen. The search hit currently visible should be ignored, and the next one
 // should become visible.
-func TestScrollToNextSearchHit_SubLineHits2(t *testing.T) {
+func TestScrollToNextSearchHit_SubLineHits3(t *testing.T) {
 	reader := reader.NewFromTextForTesting("", "1miss 2träff 3miss 4miss 5träff 6miss 7miss 8träff 9miss")
 
 	screen := twin.NewFakeScreen(10, 3)
@@ -212,9 +236,45 @@ func TestScrollToNextSearchHit_SubLineHits2(t *testing.T) {
 	assertScreenHasRow(t, screen, "8träff")
 }
 
+// Start at the bottom and type a word that is on a not-visible input line
+// higher up, which is also long enough that we'll need to scroll down to get to
+// the matching part.
+func TestScrollToPreviousSearchHit_SubLineHits1(t *testing.T) {
+	reader := reader.NewFromTextForTesting("", "1miss 2miss 3miss 4träff\n5miss\n6miss\n7miss")
+	bottom := NewScrollPositionFromIndex(linemetadata.IndexFromZeroBased(99), "end")
+
+	screen := twin.NewFakeScreen(10, 3)
+	pager := NewPager(reader)
+	pager.WrapLongLines = true
+	pager.ShowStatusBar = false
+	pager.ShowLineNumbers = false
+	pager.screen = screen
+
+	// Precondition: Check that our bottom position actually is
+	pager.scrollPosition = bottom
+	pager.redraw("")
+	assertScreenHasRow(t, screen, "7miss")
+
+	// Start typing a backwards search
+	pager.searchString = "träff"
+	searchMode := PagerModeSearch{
+		pager:                 pager,
+		direction:             SearchDirectionBackward,
+		initialScrollPosition: bottom,
+	}
+	pager.mode = searchMode
+
+	// Scroll to the previous search hit
+	searchMode.updateSearchPattern()
+
+	// The first hit should be visible
+	pager.redraw("")
+	assertScreenHasRow(t, screen, "4träff")
+}
+
 // Start at the bottom and type a backwards search for a word that is above us
 // in the wrapped line. That word should become visible.
-func TestScrollToNextSearchHit_SubLineHits3(t *testing.T) {
+func TestScrollToPreviousSearchHit_SubLineHits2(t *testing.T) {
 	reader := reader.NewFromTextForTesting("", "1miss 2träff 3miss 4miss 5träff 6miss 7miss 8miss 9miss")
 	bottom := NewScrollPositionFromIndex(linemetadata.IndexFromZeroBased(99), "end")
 
@@ -250,7 +310,7 @@ func TestScrollToNextSearchHit_SubLineHits3(t *testing.T) {
 // Start at the bottom and search for a word that is above us in the wrapped
 // line. The search hit currently visible should be ignored, and the next one
 // should become visible.
-func TestScrollToNextSearchHit_SubLineHits4(t *testing.T) {
+func TestScrollToPreviousSearchHit_SubLineHits3(t *testing.T) {
 	reader := reader.NewFromTextForTesting("", "1miss 2träff 3miss 4miss 5träff 6miss 7miss 8träff 9miss")
 	bottom := NewScrollPositionFromIndex(linemetadata.IndexFromZeroBased(99), "end")
 
