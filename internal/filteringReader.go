@@ -102,6 +102,44 @@ func (f *FilteringReader) getAllLines() []reader.NumberedLine {
 	return *f.filteredLinesCache
 }
 
+func (f *FilteringReader) FindLine(startPosition linemetadata.Index, pattern regexp.Regexp, beforePosition *linemetadata.Index, forward bool) *linemetadata.Index {
+	if f.shouldPassThrough() {
+		return f.BackingReader.FindLine(startPosition, pattern, beforePosition, forward)
+	}
+
+	allLines := f.getAllLines()
+
+	searchPosition := startPosition
+
+	for {
+		// Check bounds
+		if searchPosition.Index() < 0 || searchPosition.Index() >= len(allLines) {
+			return nil
+		}
+		if beforePosition != nil {
+			if forward && searchPosition.Index() >= beforePosition.Index() {
+				return nil
+			}
+			if !forward && searchPosition.Index() <= beforePosition.Index() {
+				return nil
+			}
+		}
+		line := allLines[searchPosition.Index()]
+		if pattern.MatchString(line.Plain()) {
+			return &searchPosition
+		}
+
+		if forward {
+			searchPosition = searchPosition.NonWrappingAdd(1)
+		} else {
+			if searchPosition.IsZero() {
+				return nil
+			}
+			searchPosition = searchPosition.NonWrappingAdd(-1)
+		}
+	}
+}
+
 func (f *FilteringReader) shouldPassThrough() bool {
 	f.lock.Lock()
 	defer f.lock.Unlock()
