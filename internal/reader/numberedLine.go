@@ -2,6 +2,7 @@ package reader
 
 import (
 	"regexp"
+	"strings"
 
 	"github.com/rivo/uniseg"
 	"github.com/walles/moor/v2/internal/linemetadata"
@@ -15,8 +16,16 @@ type NumberedLine struct {
 	Line   *Line
 }
 
+// Warning: This is slow. If that turns out to be a problem, start profiling.
 func (nl *NumberedLine) Plain() string {
-	return nl.Line.Plain()
+	styled := nl.Line.HighlightedTokens(twin.StyleDefault, twin.StyleDefault, nil, &nl.Index).StyledRunes
+
+	var b strings.Builder
+	b.Grow(len(styled))
+	for i := range styled {
+		b.WriteRune(styled[i].Rune)
+	}
+	return b.String()
 }
 
 func (nl *NumberedLine) HighlightedTokens(plainTextStyle twin.Style, searchHitStyle twin.Style, search *regexp.Regexp) textstyles.StyledRunesWithTrailer {

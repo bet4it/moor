@@ -98,7 +98,7 @@ func FindFirstHit(reader reader.Reader, pattern regexp.Regexp, startPosition lin
 				PanicHandler("findFirstHit()/chunkSearch", recover(), debug.Stack())
 			}()
 
-			findings[i] <- _findFirstHit(reader, searchStart, pattern, chunkBefore, direction)
+			findings[i] <- reader.FindLine(searchStart, pattern, chunkBefore, direction == SearchDirectionForward)
 		}(i, searchStart, chunkBefore)
 	}
 
@@ -111,46 +111,4 @@ func FindFirstHit(reader reader.Reader, pattern regexp.Regexp, startPosition lin
 	}
 
 	return nil
-}
-
-// NOTE: When we search, we do that by looping over the *input lines*, not the
-// screen lines. That's why startPosition is an Index rather than a
-// scrollPosition.
-//
-// The `beforePosition` parameter is exclusive, meaning that line will not be
-// searched.
-//
-// This method will run over multiple chunks of the input file in parallel to
-// help large file search performance.
-func _findFirstHit(reader reader.Reader, startPosition linemetadata.Index, pattern regexp.Regexp, beforePosition *linemetadata.Index, direction SearchDirection) *linemetadata.Index {
-	searchPosition := startPosition
-	lineCache := searchLineCache{}
-	for {
-		line := lineCache.GetLine(reader, searchPosition, direction)
-		if line == nil {
-			// No match, give up
-			return nil
-		}
-
-		lineText := line.Plain()
-		if pattern.MatchString(lineText) {
-			return &searchPosition
-		}
-
-		if direction == SearchDirectionForward {
-			searchPosition = searchPosition.NonWrappingAdd(1)
-		} else {
-			if (searchPosition == linemetadata.Index{}) {
-				// Reached the top without any match, give up
-				return nil
-			}
-
-			searchPosition = searchPosition.NonWrappingAdd(-1)
-		}
-
-		if beforePosition != nil && searchPosition == *beforePosition {
-			// No match, give up
-			return nil
-		}
-	}
 }

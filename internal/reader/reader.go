@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -58,6 +59,13 @@ type Reader interface {
 	// This method will try to honor wantedLineCount over firstLine. This means
 	// that the returned first line may be different from the requested one.
 	GetLines(firstLine linemetadata.Index, wantedLineCount int) InputLines
+
+	// Scan for a line matching the pattern, starting at startPosition. If
+	// beforePosition is set, do not search that line or any after it in the
+	// search direction.
+	//
+	// Returns nil on not found.
+	FindLine(startPosition linemetadata.Index, pattern regexp.Regexp, beforePosition *linemetadata.Index, forward bool) *linemetadata.Index
 
 	// False when paused. Showing the paused line count is confusing, because
 	// the user might think that the number is the total line count, even though
@@ -932,6 +940,62 @@ func (reader *ReaderImpl) getLinesUnlocked(firstLine linemetadata.Index, wantedL
 	return InputLines{
 		Lines:      returnLines,
 		StatusText: reader.createStatusUnlocked(lastLine),
+	}
+}
+
+// The `beforePosition` parameter is exclusive, meaning that line will not be
+// searched.
+func (reader *ReaderImpl) FindLine(startPosition linemetadata.Index, pattern regexp.Regexp, beforePosition *linemetadata.Index, forward bool) *linemetadata.Index {
+	searchPosition := startPosition
+	reader.RLock()
+	defer reader.RUnlock()
+
+	for {
+		if beforePosition != nil {
+			if forward && searchPosition.Index() >= beforePosition.Index() {
+				// No match, give up
+				return nil
+			}
+			if !forward && searchPosition.Index() <= beforePosition.Index() {
+				// No match, give up
+				return nil
+			}
+		}
+		if searchPosition.Index() < 0 || searchPosition.Index() >= len(reader.lines) {
+			// No match, give up
+			return nil
+		}
+
+		line := reader.lines[searchPosition.Index()]
+		if line.plain == nil {
+			// Plaining is slow, release the lock while doing it
+			reader.RUnlock()
+
+			// Holding no locks, do the slow work
+			plain := textstyles.WithoutFormatting(line.raw, &searchPosition)
+
+			// Update the reader, needs the write lock
+			reader.Lock()
+			line.plain = &plain
+			reader.Unlock()
+
+			// Reacquire the read lock for the next loop iteration
+			reader.RLock()
+		}
+
+		if pattern.MatchString(*line.plain) {
+			return &searchPosition
+		}
+
+		if forward {
+			searchPosition = searchPosition.NonWrappingAdd(1)
+		} else {
+			if searchPosition.IsZero() {
+				// No match, give up
+				return nil
+			}
+			searchPosition = searchPosition.NonWrappingAdd(-1)
+		}
 	}
 }
 

@@ -11,7 +11,7 @@ import (
 // A Line represents a line of text that can / will be paged
 type Line struct {
 	raw   string
-	plain *string // This will be populated by the reader's Get methods if not set
+	plain *string // Only to be handled while holding the ReaderImpl lock
 }
 
 // NewLine creates a new Line from a (potentially ANSI / man page formatted) string
@@ -56,11 +56,6 @@ func (line *Line) HighlightedTokens(
 		Trailer:           fromString.Trailer,
 		ContainsSearchHit: !matchRanges.Empty(),
 	}
-}
-
-// Plain returns a plain text representation of the initial string
-func (line *Line) Plain() string {
-	return *line.plain
 }
 
 func (line *Line) HasManPageFormatting() bool {
