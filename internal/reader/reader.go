@@ -80,9 +80,11 @@ type line struct {
 //
 // This package provides query methods for the struct, no peeking!!
 type ReaderImpl struct {
-	lock sync.RWMutex
+	lineLocks []sync.RWMutex
+	lines     []*line
 
-	lines []*line
+	// Protects struct fields, except lines which have their own locks
+	lock sync.Mutex
 
 	// Display name for the buffer. If not set, no buffer name will be shown.
 	//

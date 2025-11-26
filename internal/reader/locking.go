@@ -19,16 +19,16 @@ func (reader *ReaderImpl) getLocksForRange(startIndexInclusive uint64, endIndexI
 		panic(fmt.Sprintf("Can't lock negative size range %d-%d", startIndexInclusive, endIndexInclusive))
 	}
 
-	lockIndex := (startIndexInclusive / LOCK_SECTION_SIZE) % uint64(len(reader.locks))
-	lastLockIndex := (endIndexInclusive / LOCK_SECTION_SIZE) % uint64(len(reader.locks))
+	lockIndex := (startIndexInclusive / LOCK_SECTION_SIZE) % uint64(len(reader.lineLocks))
+	lastLockIndex := (endIndexInclusive / LOCK_SECTION_SIZE) % uint64(len(reader.lineLocks))
 
 	var locksToUse []*sync.RWMutex
 	for {
-		locksToUse = append(locksToUse, &reader.locks[lockIndex])
+		locksToUse = append(locksToUse, &reader.lineLocks[lockIndex])
 		if lockIndex == lastLockIndex {
 			break
 		}
-		lockIndex = (lockIndex + 1) % uint64(len(reader.locks))
+		lockIndex = (lockIndex + 1) % uint64(len(reader.lineLocks))
 	}
 
 	return locksToUse
