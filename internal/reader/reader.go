@@ -80,7 +80,7 @@ type line struct {
 //
 // This package provides query methods for the struct, no peeking!!
 type ReaderImpl struct {
-	sync.RWMutex
+	lock sync.RWMutex
 
 	lines []*line
 
@@ -162,8 +162,8 @@ func (reader *ReaderImpl) preAllocLines() {
 		return
 	}
 
-	reader.Lock()
-	defer reader.Unlock()
+	reader.rwLock()
+	defer reader.rwUnlock()
 
 	if len(reader.lines) != 0 {
 		// I don't understand how this could happen.
@@ -210,9 +210,9 @@ func (reader *ReaderImpl) readStream(stream io.Reader, formatter chroma.Formatte
 // pauseAfterLinesUpdated to be signalled in SetPauseAfterLines().
 func (reader *ReaderImpl) maybePause() {
 	for {
-		reader.RLock()
+		reader.rLock()
 		shouldPause := len(reader.lines) >= reader.pauseAfterLines
-		reader.RUnlock()
+		reader.rUnlock()
 
 		if !shouldPause {
 			// Not there yet, no pause
@@ -268,12 +268,12 @@ func (reader *ReaderImpl) consumeLinesFromStream(stream io.Reader) {
 				break
 			}
 
-			reader.Lock()
+			reader.rwLock()
 			if reader.Err == nil {
 				// Store the error unless it overwrites one we already have
 				reader.Err = fmt.Errorf("error reading line from input stream: %w", err)
 			}
-			reader.Unlock()
+			reader.rwUnlock()
 		}
 
 		if eof {
@@ -287,7 +287,7 @@ func (reader *ReaderImpl) consumeLinesFromStream(stream io.Reader) {
 		newLineString := string(completeLine)
 		newLine := line{raw: newLineString}
 
-		reader.Lock()
+		reader.rwLock()
 		if len(reader.lines) > 0 && !reader.endsWithNewline {
 			// The last line didn't end with a newline, append to it
 			newLineString = reader.lines[len(reader.lines)-1].raw + newLineString
@@ -298,7 +298,7 @@ func (reader *ReaderImpl) consumeLinesFromStream(stream io.Reader) {
 		}
 		reader.endsWithNewline = true
 
-		reader.Unlock()
+		reader.rwUnlock()
 
 		// Reset our line buffer
 		completeLine = completeLine[:0]
@@ -313,9 +313,9 @@ func (reader *ReaderImpl) consumeLinesFromStream(stream io.Reader) {
 	}
 
 	if reader.FileName != nil {
-		reader.Lock()
+		reader.rwLock()
 		reader.bytesCount += inspectionReader.bytesCount
-		reader.Unlock()
+		reader.rwUnlock()
 	}
 
 	// If the stream was empty we never got any first byte. Make sure people
@@ -332,9 +332,9 @@ func (reader *ReaderImpl) consumeLinesFromStream(stream io.Reader) {
 }
 
 func (reader *ReaderImpl) tailFile() error {
-	reader.RLock()
+	reader.rLock()
 	fileName := reader.FileName
-	reader.RUnlock()
+	reader.rUnlock()
 	if fileName == nil {
 		return nil
 	}
@@ -353,9 +353,9 @@ func (reader *ReaderImpl) tailFile() error {
 			return nil
 		}
 
-		reader.RLock()
+		reader.rLock()
 		bytesCount := reader.bytesCount
-		reader.RUnlock()
+		reader.rUnlock()
 
 		if bytesCount == -1 {
 			log.Debugf("Bytes count unknown for %s, stop tailing", *fileName)
@@ -424,9 +424,9 @@ func NewFromStream(displayName string, reader io.Reader, formatter chroma.Format
 	mReader := newReaderFromStream(zReader, nil, formatter, options)
 
 	if len(displayName) > 0 {
-		mReader.Lock()
+		mReader.rwLock()
 		mReader.DisplayName = &displayName
-		mReader.Unlock()
+		mReader.rwUnlock()
 	}
 
 	if options.Style != nil {
@@ -530,8 +530,8 @@ func NewFromTextForTesting(name string, text string) *ReaderImpl {
 }
 
 func (reader *ReaderImpl) DisableCacheForBenchmarking() {
-	reader.Lock()
-	defer reader.Unlock()
+	reader.rwLock()
+	defer reader.rwUnlock()
 	reader.disableCache = true
 }
 
@@ -662,13 +662,13 @@ func (reader *ReaderImpl) Wait() error {
 	for !reader.HighlightingDone.Load() {
 	}
 
-	reader.RLock()
-	defer reader.RUnlock()
+	reader.rLock()
+	defer reader.rUnlock()
 	return reader.Err
 }
 
 func textAsString(reader *ReaderImpl, shouldFormat bool) string {
-	reader.RLock()
+	reader.rLock()
 
 	text := strings.Builder{}
 	for _, line := range reader.lines {
@@ -676,7 +676,7 @@ func textAsString(reader *ReaderImpl, shouldFormat bool) string {
 		text.WriteString("\n")
 	}
 	result := text.String()
-	reader.RUnlock()
+	reader.rUnlock()
 
 	var jsonData any
 	err := json.Unmarshal([]byte(result), &jsonData)
@@ -710,17 +710,17 @@ func isXml(text string) bool {
 func highlightFromMemory(reader *ReaderImpl, formatter chroma.Formatter, options ReaderOptions) {
 	// Is the buffer small enough?
 	var byteCount int64
-	reader.RLock()
+	reader.rLock()
 	for _, line := range reader.lines {
 		byteCount += int64(len(line.raw))
 
 		if byteCount > MAX_HIGHLIGHT_SIZE {
 			log.Info("File too large for highlighting: ", byteCount)
-			reader.RUnlock()
+			reader.rUnlock()
 			return
 		}
 	}
-	reader.RUnlock()
+	reader.rUnlock()
 
 	text := textAsString(reader, options.ShouldFormat)
 
@@ -828,9 +828,8 @@ func (reader *ReaderImpl) AwaitFirstByte() {
 
 // GetLineCount returns the number of lines available for viewing
 func (reader *ReaderImpl) GetLineCount() int {
-	reader.RLock()
-	defer reader.RUnlock()
-
+	reader.rLock()
+	defer reader.rUnlock()
 	return len(reader.lines)
 }
 
@@ -870,7 +869,7 @@ func (reader *ReaderImpl) plain(lines []*line, firstIndex linemetadata.Index, wi
 	}
 
 	// Plaining is slow, release the lock while doing it
-	reader.RUnlock()
+	reader.rUnlock()
 
 	// Holding no locks, do the slow work
 	plainLines := make([]string, 0, len(lines))
@@ -881,29 +880,28 @@ func (reader *ReaderImpl) plain(lines []*line, firstIndex linemetadata.Index, wi
 	// Update the reader, needs the write lock. Note that we take the lock
 	// whether or not we are actually caching, to simulate cache misses for
 	// benchmarking.
-	reader.Lock()
+	reader.rwLock()
 	if withCache {
 		for loopIndex, l := range lines {
 			l.plainTextCache = &plainLines[loopIndex]
 		}
 	}
-	reader.Unlock()
+	reader.rwUnlock()
 
 	// Reacquire the read lock for the next loop iteration
-	reader.RLock()
+	reader.rLock()
 
 	return plainLines
 }
 
 // GetLine gets a line. If the requested line number is out of bounds, nil is returned.
 func (reader *ReaderImpl) GetLine(index linemetadata.Index) *NumberedLine {
-	reader.RLock()
-	defer reader.RUnlock()
-
+	reader.rLock()
+	defer reader.rUnlock()
 	if index.Index() >= reader.pauseAfterLines-DEFAULT_PAUSE_AFTER_LINES/2 {
 		// Switch to the write lock for changing the pause threshold
-		reader.RUnlock()
-		reader.Lock()
+		reader.rUnlock()
+		reader.rwLock()
 
 		// Getting close(ish) to the pause threshold, bump it up. The Max()
 		// construct is to handle the case when the add overflows.
@@ -918,10 +916,9 @@ func (reader *ReaderImpl) GetLine(index linemetadata.Index) *NumberedLine {
 		}
 
 		// Back to read lock for the rest of this function
-		reader.Unlock()
-		reader.RLock()
+		reader.rwUnlock()
+		reader.rLock()
 	}
-
 	if !index.IsWithinLength(len(reader.lines)) {
 		return nil
 	}
@@ -940,8 +937,8 @@ func (reader *ReaderImpl) GetLine(index linemetadata.Index) *NumberedLine {
 //
 //revive:disable-next-line:unexported-return
 func (reader *ReaderImpl) GetLines(firstLine linemetadata.Index, wantedLineCount int) InputLines {
-	reader.RLock()
-	defer reader.RUnlock()
+	reader.rLock()
+	defer reader.rUnlock()
 	return reader.getLinesUnlocked(firstLine, wantedLineCount)
 }
 
@@ -1051,9 +1048,9 @@ func (reader *ReaderImpl) setText(text string) {
 		lines = lines[0 : len(lines)-1]
 	}
 
-	reader.Lock()
+	reader.rwLock()
 	reader.lines = lines
-	reader.Unlock()
+	reader.rwUnlock()
 
 	log.Trace("Reader done, contents explicitly set")
 
@@ -1080,9 +1077,9 @@ func (reader *ReaderImpl) SetPauseAfterLines(lines int) {
 
 	log.Trace("Setting pause-after-lines to ", lines, "...")
 
-	reader.Lock()
+	reader.rwLock()
 	reader.pauseAfterLines = lines
-	reader.Unlock()
+	reader.rwUnlock()
 
 	// Notify the reader that the pause-after-lines value has been updated. Will
 	// be noticed in the maybePause() function.
