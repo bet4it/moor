@@ -871,48 +871,53 @@ func (reader *ReaderImpl) ShouldShowLineCount() bool {
 	return false
 }
 
-// The reader must be RLock()ed before entering this function. The index is for
-// error reporting.
-func (reader *ReaderImpl) plain(lines []*line, firstIndex linemetadata.Index, withCache bool) []string {
+// The reader must have rLock()ed the requested lines before entering this
+// function. We also assume that our caller ensured that firstIndex and
+// lastIndexInclusive are within bounds.
+func (reader *ReaderImpl) plain(firstIndex int, lastIndexInclusive int, withCache bool) []string {
 	alreadyCached := true
-	for _, l := range lines {
-		if l.plainTextCache == nil {
+	for i := firstIndex; i <= lastIndexInclusive; i++ {
+		if reader.lines[i].plainTextCache == nil {
 			alreadyCached = false
 			break
 		}
 	}
 
+	lineCount := lastIndexInclusive - firstIndex + 1
+	plainLines := make([]string, 0, lineCount)
+
 	if alreadyCached {
 		// All lines cached, fast path
-		plainLines := make([]string, 0, len(lines))
-		for _, l := range lines {
-			plainLines = append(plainLines, *l.plainTextCache)
+		for i := firstIndex; i <= lastIndexInclusive; i++ {
+			plainLines = append(plainLines, *reader.lines[i].plainTextCache)
 		}
 		return plainLines
 	}
 
 	// Plaining is slow, release the lock while doing it
-	reader.rUnlock()
+	reader.rUnlock(firstIndex, lastIndexInclusive)
 
 	// Holding no locks, do the slow work
-	plainLines := make([]string, 0, len(lines))
-	for loopIndex, l := range lines {
-		plainLines = append(plainLines, textstyles.StripFormatting(l.raw, firstIndex.NonWrappingAdd(loopIndex)))
+	for i := firstIndex; i <= lastIndexInclusive; i++ {
+		plainLines = append(plainLines, textstyles.StripFormatting(
+			reader.lines[i].raw,
+			linemetadata.IndexFromZeroBased(i),
+		))
 	}
 
 	// Update the reader, needs the write lock. Note that we take the lock
 	// whether or not we are actually caching, to simulate cache misses for
 	// benchmarking.
-	reader.rwLock()
+	reader.rwLock(firstIndex, lastIndexInclusive)
 	if withCache {
-		for loopIndex, l := range lines {
-			l.plainTextCache = &plainLines[loopIndex]
+		for i := firstIndex; i <= lastIndexInclusive; i++ {
+			reader.lines[i].plainTextCache = &plainLines[i-firstIndex]
 		}
 	}
-	reader.rwUnlock()
+	reader.rwUnlock(firstIndex, lastIndexInclusive)
 
 	// Reacquire the read lock for the next loop iteration
-	reader.rLock()
+	reader.rLock(firstIndex, lastIndexInclusive)
 
 	return plainLines
 }
