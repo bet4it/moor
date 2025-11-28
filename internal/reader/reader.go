@@ -476,6 +476,8 @@ func newReaderFromStream(reader io.Reader, originalFileName *string, formatter c
 		displayFileName = &basename
 	}
 	returnMe := ReaderImpl{
+		lineLocks: createLocks(),
+
 		FileName:    originalFileName,
 		DisplayName: displayFileName,
 
@@ -526,6 +528,7 @@ func NewFromTextForTesting(name string, text string) *ReaderImpl {
 	highlightingDone := atomic.Bool{}
 	highlightingDone.Store(true) // No highlighting to do = nothing left = Done!
 	returnMe := &ReaderImpl{
+		lineLocks:               createLocks(),
 		lines:                   lines,
 		ReadingDone:             &readingDone,
 		HighlightingDone:        &highlightingDone,
