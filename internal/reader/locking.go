@@ -19,22 +19,27 @@ func (reader *ReaderImpl) getLocksForRange(startIndexInclusive int, endIndexIncl
 		panic(fmt.Sprintf("Can't lock negative size range %d-%d", startIndexInclusive, endIndexInclusive))
 	}
 
-	lockSectionIndex := (startIndexInclusive / LOCK_SECTION_SIZE)
+	firstLockSectionIndex := (startIndexInclusive / LOCK_SECTION_SIZE)
 	lastLockSectionIndex := (endIndexInclusive / LOCK_SECTION_SIZE)
 
-	lockIndex := lockSectionIndex % len(reader.lineLocks)
-	lastLockIndex := lastLockSectionIndex % len(reader.lineLocks)
+	// FIXME: Does make() here impact benchmark numbers? Otherwise maybe skip
+	// it?
+	locksToUse := make([]*sync.RWMutex, 0, len(reader.lineLocks))
 
-	var locksToUse []*sync.RWMutex
-	if lockIndex == lastLockIndex && lastLockSectionIndex > lockSectionIndex {
-		// Wrap around case, we must use all locks
+	lockSectionsCount := lastLockSectionIndex - firstLockSectionIndex + 1
+	if lockSectionsCount >= len(reader.lineLocks) {
+		// Range is larger than number of locks, must use all locks
 		for i := 0; i < len(reader.lineLocks); i++ {
 			locksToUse = append(locksToUse, &reader.lineLocks[i])
 		}
 		return locksToUse
 	}
 
+	firstLockIndex := firstLockSectionIndex % len(reader.lineLocks)
+	lastLockIndex := lastLockSectionIndex % len(reader.lineLocks)
+
 	// Normal case, just list the needed locks
+	lockIndex := firstLockIndex
 	for {
 		locksToUse = append(locksToUse, &reader.lineLocks[lockIndex])
 		if lockIndex == lastLockIndex {
