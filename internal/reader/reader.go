@@ -957,38 +957,40 @@ func (reader *ReaderImpl) GetLine(index linemetadata.Index) *NumberedLine {
 }
 
 // GetLines gets the indicated lines from the input
-//
-//revive:disable-next-line:unexported-return
 func (reader *ReaderImpl) GetLines(firstLine linemetadata.Index, wantedLineCount int) InputLines {
-	reader.rLock()
-	defer reader.rUnlock()
-	return reader.getLinesUnlocked(firstLine, wantedLineCount)
-}
-
-// Assumes the read lock is being held
-func (reader *ReaderImpl) getLinesUnlocked(firstLine linemetadata.Index, wantedLineCount int) InputLines {
+	reader.lock.Lock()
 	if len(reader.lines) == 0 || wantedLineCount == 0 {
+		statusText := reader.createStatusUnlocked(firstLine)
+		reader.lock.Unlock()
 		return InputLines{
-			StatusText: reader.createStatusUnlocked(firstLine),
+			StatusText: statusText,
 		}
 	}
 
-	lastLine := firstLine.NonWrappingAdd(wantedLineCount - 1)
-
 	// Prevent reading past the end of the available lines
-	maxLineIndex := *linemetadata.IndexFromLength(len(reader.lines))
-	if lastLine.IsAfter(maxLineIndex) {
-		lastLine = maxLineIndex
+	firstLineIndex := firstLine.Index()
+	lastLineIndex := firstLineIndex + wantedLineCount - 1
 
-		// If one line was requested, then first and last should be exactly the
-		// same, and we would get there by adding zero.
-		firstLine = lastLine.NonWrappingAdd(1 - wantedLineCount)
+	if lastLineIndex >= len(reader.lines) {
+		overshoot := lastLineIndex - (len(reader.lines) - 1)
 
-		return reader.getLinesUnlocked(firstLine, firstLine.CountLinesTo(lastLine))
+		firstLineIndex -= overshoot
+		lastLineIndex -= overshoot
+
+		if firstLineIndex < 0 {
+			firstLineIndex = 0
+		}
 	}
 
-	rawReturnLines := reader.lines[firstLine.Index() : lastLine.Index()+1]
-	plainReturnLines := reader.plain(rawReturnLines, firstLine, !reader.disableCache)
+	statusText := reader.createStatusUnlocked(linemetadata.IndexFromZeroBased(lastLineIndex))
+
+	// Done with lengths and indices for now, let others in
+	reader.lock.Unlock()
+
+	reader.rLock(firstLineIndex, lastLineIndex)
+	rawReturnLines := reader.lines[firstLineIndex : lastLineIndex+1]
+	plainReturnLines := reader.plain(firstLineIndex, lastLineIndex, !reader.disableCache)
+
 	returnLines := make([]NumberedLine, 0, len(rawReturnLines))
 	for loopIndex := range rawReturnLines {
 		lineIndex := firstLine.NonWrappingAdd(loopIndex)
@@ -1001,9 +1003,12 @@ func (reader *ReaderImpl) getLinesUnlocked(firstLine linemetadata.Index, wantedL
 		})
 	}
 
+	// Done reading line contents
+	reader.rUnlock(firstLineIndex, lastLineIndex)
+
 	return InputLines{
 		Lines:      returnLines,
-		StatusText: reader.createStatusUnlocked(lastLine),
+		StatusText: statusText,
 	}
 }
 
