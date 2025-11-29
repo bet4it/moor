@@ -736,6 +736,11 @@ func highlightFromMemory(reader *ReaderImpl, formatter chroma.Formatter, options
 	lineCount := len(reader.lines)
 	reader.lock.Unlock()
 
+	if lineCount == 0 {
+		// Nothing to do
+		return
+	}
+
 	reader.rLock(0, lineCount-1)
 	for i := range reader.lines {
 		byteCount += int64(len(reader.lines[i].raw))
