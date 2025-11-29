@@ -68,9 +68,12 @@ type Reader interface {
 	ShouldShowLineCount() bool
 }
 
+// Private. The public struct is called Line and lives in line.go.
 type line struct {
-	raw            string
-	plainTextCache atomic.Pointer[string] // Use line.Plain() to access this field
+	raw string
+
+	plainTextCacheLock sync.Mutex
+	plainTextCache     *string // Use line.Plain() to access this field
 }
 
 // ReaderImpl reads a file into an array of strings.
@@ -852,7 +855,10 @@ func (reader *ReaderImpl) ShouldShowLineCount() bool {
 // The index is for error reporting. Set withCache to false to simulate a cache
 // miss for benchmarking.
 func (line *line) Plain(index linemetadata.Index, withCache bool) string {
-	fromCache := line.plainTextCache.Load()
+	line.plainTextCacheLock.Lock()
+	defer line.plainTextCacheLock.Unlock()
+
+	fromCache := line.plainTextCache
 	if !withCache {
 		// Simulate a cache miss for benchmarking
 		fromCache = nil
@@ -865,7 +871,7 @@ func (line *line) Plain(index linemetadata.Index, withCache bool) string {
 
 	// If this succeeds, all good. If it fails it means some other goroutine
 	// populated the cache before us, which is also fine.
-	_ = line.plainTextCache.CompareAndSwap(nil, &plain)
+	line.plainTextCache = &plain
 
 	return plain
 }
