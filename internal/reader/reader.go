@@ -976,13 +976,13 @@ func (reader *ReaderImpl) GetLines(firstLine linemetadata.Index, wantedLineCount
 
 	if lastLineIndex >= len(reader.lines) {
 		overshoot := lastLineIndex - (len(reader.lines) - 1)
-
-		firstLineIndex -= overshoot
 		lastLineIndex -= overshoot
 
-		if firstLineIndex < 0 {
-			firstLineIndex = 0
+		if overshoot > firstLineIndex {
+			// Don't go negative
+			overshoot = firstLineIndex
 		}
+		firstLineIndex -= overshoot
 	}
 
 	statusText := reader.createStatusUnlocked(linemetadata.IndexFromZeroBased(lastLineIndex))
