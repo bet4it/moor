@@ -995,14 +995,13 @@ func (reader *ReaderImpl) GetLines(firstLine linemetadata.Index, wantedLineCount
 	plainReturnLines := reader.plain(firstLineIndex, lastLineIndex, !reader.disableCache)
 
 	returnLines := make([]NumberedLine, 0, len(rawReturnLines))
-	for loopIndex := range rawReturnLines {
-		lineIndex := firstLine.NonWrappingAdd(loopIndex)
-		returnLine := reader.lines[lineIndex.Index()]
+	for lineIndex := firstLineIndex; lineIndex <= lastLineIndex; lineIndex++ {
+		returnLine := reader.lines[lineIndex]
 
 		returnLines = append(returnLines, NumberedLine{
-			Index:  lineIndex,
-			Number: linemetadata.NumberFromZeroBased(lineIndex.Index()),
-			Line:   Line{raw: returnLine.raw, plain: plainReturnLines[loopIndex]},
+			Index:  linemetadata.IndexFromZeroBased(lineIndex),
+			Number: linemetadata.NumberFromZeroBased(lineIndex),
+			Line:   Line{raw: returnLine.raw, plain: plainReturnLines[lineIndex-firstLineIndex]},
 		})
 	}
 
