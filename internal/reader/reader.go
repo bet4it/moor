@@ -959,6 +959,42 @@ func (reader *ReaderImpl) GetLine(index linemetadata.Index) *NumberedLine {
 	}
 }
 
+// Given a starting point and a count, return a start and end index that don't
+// exceed maxIndex. On overflow, the requested range will be shifted backwards
+// to fit within maxIndex, and if that's not enough, cut at the end.
+func clipRangeToLength(start linemetadata.Index, wantedCount int, maxIndex int) (int, int) {
+	if wantedCount <= 0 {
+		panic(fmt.Sprintf("wantedCount must be at least 1, was %d", wantedCount))
+	}
+	if maxIndex < 0 {
+		panic(fmt.Sprintf("maxIndex must be at least 0, was %d", maxIndex))
+	}
+
+	first := start.Index()
+
+	// Cap wantedCount to the available length (maxIndex+1).
+	available := maxIndex + 1
+	if wantedCount > available {
+		wantedCount = available
+	}
+
+	// Clamp start so the window fits: start <= maxIndex - (wantedCount - 1)
+	highestStart := maxIndex - (wantedCount - 1)
+	if first > highestStart {
+		first = highestStart
+	}
+	if first < 0 {
+		first = 0
+	}
+
+	last := first + wantedCount - 1
+	if last > maxIndex {
+		last = maxIndex
+	}
+
+	return first, last
+}
+
 // GetLines gets the indicated lines from the input
 func (reader *ReaderImpl) GetLines(firstLine linemetadata.Index, wantedLineCount int) InputLines {
 	reader.lock.Lock()
@@ -970,20 +1006,7 @@ func (reader *ReaderImpl) GetLines(firstLine linemetadata.Index, wantedLineCount
 		}
 	}
 
-	// Prevent reading past the end of the available lines
-	firstLineIndex := firstLine.Index()
-	lastLineIndex := firstLineIndex + wantedLineCount - 1
-
-	if lastLineIndex >= len(reader.lines) {
-		overshoot := lastLineIndex - (len(reader.lines) - 1)
-		lastLineIndex -= overshoot
-
-		if overshoot > firstLineIndex {
-			// Don't go negative
-			overshoot = firstLineIndex
-		}
-		firstLineIndex -= overshoot
-	}
+	firstLineIndex, lastLineIndex := clipRangeToLength(firstLine, wantedLineCount, len(reader.lines)-1)
 
 	statusText := reader.createStatusUnlocked(linemetadata.IndexFromZeroBased(lastLineIndex))
 
